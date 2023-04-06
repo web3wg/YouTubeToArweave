@@ -233,6 +233,7 @@ async function retryDownloadVideoThumbnail(thumbnailUrl, thumbnailPath, maxRetri
         console.log("Error downloading thumbnail:", thumbnail);
         console.log("Retrying download...");
         retries++;
+        await new Promise(resolve => setTimeout(resolve, 3000));
         continue;
       }
       return thumbnail;
@@ -249,6 +250,7 @@ async function retryDownloadVideo(info, format, outputPath, maxRetries) {
         console.log("Error downloading video:", video);
         console.log("Retrying download...");
         retries++;
+        await new Promise(resolve => setTimeout(resolve, 3000));
         continue;
       }
       return video;
