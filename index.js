@@ -341,7 +341,7 @@ async function downloadVideo(info, format, outputPath) {
           .pipe(fs.createWriteStream(outputPath + "/" + filename))
           .on("finish", () => {
             console.log("Download complete       :", filename);
-            resolve(video);
+            resolve();
           })
           .on("error", (e) => {
             reject(e);
