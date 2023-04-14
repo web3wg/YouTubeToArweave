@@ -27,15 +27,15 @@ MAX_RETRIES=3
 
 To upload a single YouTube video to Arweave, run the following command:
 
-```node index.js YouTubeToArweave <YouTube video URL>```
+```node index.js YouTubeToArweave <YouTube video ID>```
 
 To upload an entire YouTube playlist to Arweave, run the following command:
 
-```node index.js YouTubePlaylistToArweave <YouTube playlist URL>```
+```node index.js YouTubePlaylistToArweave <YouTube playlist ID>```
 
 ## How it Works
 
-The YouTubeToArweave app works by first downloading the video assets (highest quality video and thumbnail) and metadata from YouTube using the provided video URL or playlist URL. It then tops up the user's Arweave node with the necessary amount of AR tokens to cover the storage and transaction costs, and finally uploads the video assets and metadata to the Arweave network. The uploaded content can be accessed using the Arweave gateway at [arweave.net](https://arweave.net).
+The YouTubeToArweave app works by first downloading the video assets (highest quality video and thumbnail) and metadata from YouTube using the provided video ID or playlist ID. It then tops up the user's Arweave node with the necessary amount of AR tokens to cover the storage and transaction costs, and finally uploads the video assets and metadata to the Arweave network. The uploaded content can be accessed using the Arweave gateway at [arweave.net](https://arweave.net).
 
 ## Credits
 

@@ -61,16 +61,27 @@ async function uploadFile(filename, tags) {
   }
 }
 
-async function uploadFolder(id, video) {
+async function uploadVideos(videoIDs) {
+  console.log('uploading these:', videoIDs)
+  const uploadpromises = [];
+  for (const id of videoIDs){
+  video =  await getVideoInfo("https://www.youtube.com/watch?v=" + id.id)
+  console.log("Uploading folder        :", id.id)
   try {
-    const folder = "files/" + id + "/";
+    const folder = "files/" + id.id + "/";
     const files = fs.readdirSync(folder);
     const filenames = [];
     const paths = [];
-    const thumbnailFilename = []
-    const videoFilename = []
-    const metadataFilename = []
-    for (const file of files) {
+    const thumbnailFilename = [];
+    const videoFilename = [];
+    const metadataFilename = [];
+    const promises = [];
+    const sortedFiles = files.sort((a, b) => {
+      const fileSizeA = fs.statSync(folder + a).size;
+      const fileSizeB = fs.statSync(folder + b).size;
+      return fileSizeA - fileSizeB;
+    });
+    for (const file of sortedFiles) {
       const extension = path.extname(file);  
       const contentType =
         extension === ".json"
@@ -83,19 +94,24 @@ async function uploadFolder(id, video) {
         { name: "AppName", value: "YouTubeToArweave" },
       ];
       if (file != ".DS_Store") {
-        const txid = await uploadFile(id + "/" + file, tags);
-      const filepath = `\n"${file}":{"id": "${txid}"}`;
-      if (extension === ".jpg" || extension === ".webp") {
-        thumbnailFilename.push(file);
-      } else if (extension === ".mp4" || extension === ".webm") {
-        videoFilename.push(file);
-      } else if (extension === ".json") {
-        metadataFilename.push(file);
-      }
+        console.log("uploading file          :", file)
+        const txid = await uploadFile(id.id + "/" + file, tags);
+        console.log("file uploaded, txid     :", txid)
+          const filepath = `\n"${file}":{"id": "${txid}"}`;
+          if (extension === ".jpg" || extension === ".webp") {
+            thumbnailFilename.push(file);
+          } else if (extension === ".mp4" || extension === ".webm") {
+            videoFilename.push(file);
+          } else if (extension === ".json") {
+            metadataFilename.push(file);
+          }
       paths.push(filepath);
       filenames.push(file);
       }
     }
+
+    await Promise.all(promises);
+
     const data = 
 `{
 "manifest": "arweave/paths",
@@ -103,7 +119,7 @@ async function uploadFolder(id, video) {
 "paths": {${paths}
 }
 }`;
-    const manifestjson = `${id}-manifest.json`;
+    const manifestjson = `${video.id}-manifest.json`;
     const writeFilePromise = new Promise((resolve, reject) => {
       fs.writeFile("files/" + manifestjson, data, function (err) {
         if (err) reject(err);
@@ -112,7 +128,7 @@ async function uploadFolder(id, video) {
     });
 
     await writeFilePromise;
-
+    
     const tags = [
       { name: "Content-Type", value: "application/x.arweave-manifest+json" },
       { name: "AppName", value: "YouTubeToArweave" },
@@ -131,17 +147,21 @@ async function uploadFolder(id, video) {
     console.log(`Tags size: ${newTagsSize} bytes`)
     const manifesttxid = await uploadFile(manifestjson, tags);
     const result = { manifesttxid, filenames };
-    return result;
+      console.log("video assets and metadata uploaded to arweave. manifest txid: ", manifesttxid);
+    uploadpromises.push(result)
   } catch (error) {
     console.log("Error uploading file ", error);
   }
+  }
+  await Promise.all(uploadpromises);
+  console.log("All videos assets & metadata uploaded. manifest txids:", uploadpromises);
 }
 
-async function topUpNode(videos){
+async function topUpNode(videoIDs){
   nodeBalance = await getNodeBalance();
   atomicBalance = nodeBalance.atomicBalance;
   let totalSize = 0;
-  videos.forEach(video => {
+  videoIDs.forEach(video => {
     dir = 'files/'+video.id;
     const files = fs.readdirSync(dir);
     for (const file of files) {
@@ -168,23 +188,23 @@ async function topUpNode(videos){
   const priceOfFile = await getUploadPrice(totalSize);
   priceOfFileAtomic = priceOfFile.priceOfFileAtomic;
 
-  console.log((`uploadPrice: ${(priceOfFileAtomic/1e12).toFixed(4)} AR`), (`\nnodeBalance: ${(atomicBalance/1e12).toFixed(4)} AR`))
-  const topUpAmount = priceOfFileAtomic - atomicBalance;
+  console.log((`uploadPrice             : ${(priceOfFileAtomic/1e12).toFixed(4)} AR`), (`\nnodeBalance             : ${(atomicBalance/1e12).toFixed(4)} AR`))
+  const topUpAmount = (priceOfFileAtomic - atomicBalance)*1.1;
   if (topUpAmount > 0){
     const topUpAmount = priceOfFileAtomic - atomicBalance;
-    console.log(`Top up node by ${topUpAmount} winstons`);
+    console.log(`Top up node by ${(topUpAmount/1000000000000).toFixed(4)} AR`);
     const response = await bundlr.fund(topUpAmount);
-    console.log("Funding TX: ", response.id, "Amount:", response.quantity);
+    console.log("Funding TX: ", response.id, "Amount:", (response.quantity/1000000000000).toFixed(4), "AR");
     while (atomicBalance < priceOfFileAtomic){
       nodeBalance = await getNodeBalance();
       atomicBalance = nodeBalance.atomicBalance;
-      console.log("Node balance is insufficient, checking again in 30 seconds...");
+      console.log("Node balance is         : insufficient, checking again in 30 seconds...");
       await new Promise(resolve => setTimeout(resolve, 30000));
     }
-    console.log("Node balance is sufficient");
+    console.log("Node balance is         : sufficient");
   } else {
-    console.log("Node balance is sufficient");
-  }
+    console.log("Node balance is         : sufficient");
+  } 
 }
 
 async function getVideoInfo(url) {
@@ -220,12 +240,16 @@ async function getPlaylistVideos(url) {
 async function makeVideoDirectory(youTubeID){
   const dir = 'files/'+youTubeID;
   if (!fs.existsSync(dir)){
+    console.log(`Making directory      : ${dir}/`)
     fs.mkdirSync(dir);
   }
+  console.log(`Directory already exists: ${dir}/`)
   resolve = true;
 }
 
 async function retryDownloadVideoThumbnail(thumbnailUrl, thumbnailPath, maxRetries) {
+  console.log("downloading thumbnail   :", thumbnailPath)
+
   let retries = 0;
   while (retries < maxRetries) {
       const thumbnail = await downloadVideoThumbnail(thumbnailUrl, thumbnailPath);
@@ -233,7 +257,7 @@ async function retryDownloadVideoThumbnail(thumbnailUrl, thumbnailPath, maxRetri
         console.log("Error downloading thumbnail:", thumbnail);
         console.log("Retrying download...");
         retries++;
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 10000));
         continue;
       }
       return thumbnail;
@@ -243,23 +267,43 @@ async function retryDownloadVideoThumbnail(thumbnailUrl, thumbnailPath, maxRetri
 }
 
 async function retryDownloadVideo(info, format, outputPath, maxRetries) {
+  console.log("downloading video       :", info.video_details.id)
   let retries = 0;
-  while (retries < maxRetries) {
-      const video = await downloadVideo(info, format, outputPath);
-      if (typeof video === "string" && video.startsWith("Error")) {
-        console.log("Error downloading video:", video);
-        console.log("Retrying download...");
-        retries++;
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        continue;
-      }
+  const timeout = 5000;
+  let response;
+
+  while (!response && retries < maxRetries) {
+  try {
+    response = await axios({
+      method: "get",
+      url: format.url,
+      responseType: "stream",
+    });
+  } catch (error) {
+    // console.log(error.code);
+  }
+  if (!response) {
+    retries++;
+    console.log(`Getting info again for  : ${info.video_details.id}`)
+    info = await video_info("https://www.youtube.com/watch?v=" + info.video_details.id);
+    format = info.format.filter((format) => format.mimeType.startsWith("video/")).sort(
+      (a, b) => b.bitrate - a.bitrate // highest quality
+      // (b, a) => b.bitrate - a.bitrate // lowest quality
+    )[0];
+    console.log(`Retrying in ${timeout/1000}s...`);
+    await delay(timeout);
+  }
+}
+if (!response) {
+  console.log("Request timed out.");
+} else {
+      const video = await downloadVideo(info, format, outputPath, response);
       return video;
   }
-  console.log("Max retries exceeded");
-  return null;
 }
 
 async function downloadVideoThumbnail(thumbnailUrl, thumbnailPath) {
+  
   try{
     if (fs.existsSync(thumbnailPath)) {
       console.log("Thumbnail already exists:", thumbnailPath);
@@ -299,14 +343,15 @@ async function downloadVideoThumbnail(thumbnailUrl, thumbnailPath) {
   }
 }
 
-async function downloadVideo(info, format, outputPath) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function downloadVideo(info, format, outputPath, response) {
+
   try {
     const quality = format.quality;
-    const response = await axios({
-      method: "get",
-      url: format.url,
-      responseType: "stream",
-    });
+
     const mimeTypeParts = format.mimeType.split(";")[0].split("/");
     const fileExtension = mimeTypeParts[1];
     const qualityLabel = format.qualityLabel;
@@ -351,16 +396,18 @@ async function downloadVideo(info, format, outputPath) {
       });
   } catch (error) {
     console.error("Error in downloadVideo  :", error.code);
-    return `Error: ${error.code}`
   }
 }
 
 async function downloadVideoAssetsAndMetadata(videos){
+  
   if (!fs.existsSync("files")){
     fs.mkdirSync("files");
   }
   const promises = [];
   for (const video of videos) {
+    // console.log('video:', video)
+    console.log(`\nDownloading assets for  :`, video.id)
     const youTubeID = video.id;
     const videoPromises = [];
     videoPromises.push(await makeVideoDirectory(youTubeID));
@@ -388,34 +435,40 @@ async function downloadVideoAssetsAndMetadata(videos){
     promises.push(...videoPromises);
   }
   await Promise.all(promises);
-  console.log("Video assets & metadata downloaded.");
+  console.log(`\nVideo assets & metadata downloaded.\n`);
 }
 
 const args = process.argv.slice(2);
 
 if (args.length === 2 && args[0] === "YouTubeToArweave") {
   const youTubeID = args[1];
-  getVideoInfo(youTubeID).then((video) => {
-    const videos = [];
-    const id = video.video_details.id;
-    videos.push({ id });
-    downloadVideoAssetsAndMetadata(videos).then((ignore) => {
-      topUpNode(videos).then((ignore) => {
-        uploadFolder(id, video).then((result) => {
-          console.log("video assets and metadata uploaded to arweave. manifest txid: ", result.manifesttxid);
-        });
+  // getVideoInfo(youTubeID).then((video) => {
+    const videoIDs = [];
+    // const id = video.video_details.id;
+    const id = youTubeID
+    videoIDs.push({ id });
+    // console.log('videoIDs:', videoIDs)
+    // videos.push(video)
+    downloadVideoAssetsAndMetadata(videoIDs).then((video) => { //console.log("output from downloadVideoAssetsAndMetadata:", video)
+      topUpNode(videoIDs).then((ignore) => { //console.log("Uploading folder:", video.id)
+        // uploadFolder(id, video).then((result) => {
+        //   console.log("video assets and metadata uploaded to arweave. manifest txid: ", result.manifesttxid);
+        // });
+        uploadVideos(videoIDs).then((result) => {})
       });
     });
-  });
+  // });
 } else if (args.length === 2 && args[0] === "YouTubePlaylistToArweave") {
   const playlistURL = args[1];
-  getPlaylistVideos(playlistURL).then((videos) => {
-    downloadVideoAssetsAndMetadata(videos).then((video) => {
-      topUpNode(videos).then((ignore) => {
-        videos.forEach((video) => {
-          uploadFolder(video.id, video).then((result) => {
-            console.log("video assets and metadata uploaded to arweave. manifest txid: ", result.manifesttxid);
-          });
+  getPlaylistVideos(playlistURL).then((videoIDs) => { //console.log("getPlaylistVideos videos:", videos)
+    
+    downloadVideoAssetsAndMetadata(videoIDs).then((video) => {
+      topUpNode(videoIDs).then((ignore) => { //console.log("topUpNode videos:", videos)
+        uploadVideos(videoIDs).then((result) => { console.log("uploadVideos videos:", result)
+        // videos.forEach((video) => { 
+        //   uploadFolder(video.id, video).then((result) => {
+        //     console.log("video assets and metadata uploaded to arweave. manifest txid: ", result.manifesttxid);
+        //   });
         });
       });
     });
